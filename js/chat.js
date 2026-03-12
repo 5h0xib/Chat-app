@@ -5,7 +5,9 @@ let messagesSubscription = null;
 
 // Ensure this only runs on chat interface
 document.addEventListener('DOMContentLoaded', () => {
-    if (!window.location.pathname.endsWith('chat.html') && !window.location.pathname.includes('/Chat-app/') && window.location.pathname !== '/') return;
+    const isChatPage = window.location.pathname.toLowerCase().endsWith('chat.html');
+
+    if (!isChatPage) return;
 
     const messageForm = document.getElementById('messageForm');
     if (messageForm) {

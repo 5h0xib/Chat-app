@@ -6,20 +6,26 @@ let friendList = [];
 
 // Initialize friends system
 document.addEventListener('DOMContentLoaded', async () => {
+    const isChatPage = window.location.pathname.toLowerCase().endsWith('chat.html');
+
     // Only proceed if on chat.html
-    if (!window.location.pathname.endsWith('chat.html') && !window.location.pathname.includes('/Chat-app/') && window.location.pathname !== '/') return;
+    if (!isChatPage) return;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return; // auth.js will redirect
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error || !session) return;
 
-    currentUser = session.user;
+        currentUser = session.user;
 
-    await loadMyProfile();
-    await loadFriendRequests();
-    await loadFriends();
+        await loadMyProfile();
+        await loadFriendRequests();
+        await loadFriends();
 
-    setupSearch();
-    setupMobileBackBtn();
+        setupSearch();
+        setupMobileBackBtn();
+    } catch (err) {
+        console.error('Error initializing friends:', err.message);
+    }
 });
 
 /**

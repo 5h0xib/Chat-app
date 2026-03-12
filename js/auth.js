@@ -2,21 +2,40 @@
 
 // Check auth state on page load and redirect
 document.addEventListener('DOMContentLoaded', async () => {
-    // Only wait for session on page load
-    const { data: { session } } = await supabase.auth.getSession();
-    const path = window.location.pathname;
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
 
-    // Auth guard
-    if (session) {
-        if (path.endsWith('login.html') || path.endsWith('signup.html') || path.endsWith('index.html') || path === '/' || path.includes('/Chat-app/')) {
-            // Need to be careful not to loop if already on chat.html
-            if (!path.endsWith('chat.html')) {
+        const path = window.location.pathname.toLowerCase();
+        const isLoginPage = path.endsWith('login.html');
+        const isSignupPage = path.endsWith('signup.html');
+        const isChatPage = path.endsWith('chat.html');
+
+        // Auth guard
+        if (session) {
+            if (!isChatPage) {
                 window.location.href = 'chat.html';
             }
+        } else {
+            if (!isLoginPage && !isSignupPage) {
+                window.location.href = 'login.html';
+            }
         }
-    } else {
-        if (!path.endsWith('login.html') && !path.endsWith('signup.html')) {
-            window.location.href = 'login.html';
+    } catch (err) {
+        console.error("Auth initialization error:", err);
+        const path = window.location.pathname.toLowerCase();
+        const isLoginPage = path.endsWith('login.html');
+        const isSignupPage = path.endsWith('signup.html');
+
+        // Show proper error if stuck on index page or try to fallback
+        if (!isLoginPage && !isSignupPage) {
+            const h3 = document.querySelector('h3');
+            if (h3 && h3.textContent.includes('Loading')) {
+                h3.textContent = 'Connection Error: Please run this app via a local server (e.g. npx serve) or check network.';
+                h3.style.color = 'red';
+            } else {
+                window.location.href = 'login.html';
+            }
         }
     }
 
