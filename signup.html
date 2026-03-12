@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Chat App</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabaseClient.js"></script>
+    <script src="js/auth.js" defer></script>
+</head>
+
+<body class="auth-bg">
+    <div class="auth-container">
+        <div class="auth-header">
+            <h2>Create an Account</h2>
+            <p>Sign up to start chatting</p>
+        </div>
+        <form id="signupForm" class="auth-form">
+            <div id="signupError" class="error-message" style="display: none;"></div>
+            <div id="signupSuccess" class="success-message" style="display: none;"></div>
+
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" required placeholder="Choose a username" autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" required placeholder="Enter your email" autocomplete="email">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required placeholder="Enter your password"
+                    autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="signupBtn">Sign Up</button>
+            <div class="auth-links">
+                <p>Already have an account? <a href="login.html">Login</a></p>
+            </div>
+        </form>
+    </div>
+</body>
+
+</html>
