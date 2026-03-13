@@ -93,3 +93,7 @@ CREATE POLICY "Friends can send messages to each other"
                OR (user1_id = receiver_id AND user2_id = sender_id)
         )
     );
+
+-- 4. Enable Realtime for Messages
+-- This enables the Supabase Realtime broadcast for new messages
+ALTER PUBLICATION supabase_realtime ADD TABLE messages;
