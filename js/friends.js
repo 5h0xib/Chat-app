@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 async function loadMyProfile() {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('profiles')
             .select('*')
             .eq('id', currentUser.id)
@@ -100,7 +100,7 @@ async function searchUsers(query) {
 
     try {
         // Search profiles where username or email matches query, excluding self
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('profiles')
             .select('*')
             .not('id', 'eq', currentUser.id)
@@ -186,7 +186,7 @@ async function sendFriendRequest(receiverId, btnElement) {
 
     try {
         // Check if request already exists
-        const { data: existing, error: checkError } = await supabase
+        const { data: existing, error: checkError } = await supabaseClient
             .from('friend_requests')
             .select('*')
             .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${currentUser.id})`);
@@ -198,7 +198,7 @@ async function sendFriendRequest(receiverId, btnElement) {
             return;
         }
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('friend_requests')
             .insert([
                 { sender_id: currentUser.id, receiver_id: receiverId, status: 'pending' }
@@ -223,7 +223,7 @@ async function loadFriendRequests() {
     const list = document.getElementById('requestsList');
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('friend_requests')
             .select('*, sender:profiles!friend_requests_sender_id_fkey(*)')
             .eq('receiver_id', currentUser.id)
@@ -269,7 +269,7 @@ async function loadFriendRequests() {
 window.acceptRequest = async function (requestId, senderId) {
     try {
         // 1. Update request status
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseClient
             .from('friend_requests')
             .update({ status: 'accepted' })
             .eq('id', requestId);
@@ -277,7 +277,7 @@ window.acceptRequest = async function (requestId, senderId) {
         if (updateError) throw updateError;
 
         // 2. Insert into friends table
-        const { error: insertError } = await supabase
+        const { error: insertError } = await supabaseClient
             .from('friends')
             .insert([
                 { user1_id: senderId, user2_id: currentUser.id }
@@ -303,7 +303,7 @@ window.acceptRequest = async function (requestId, senderId) {
  */
 window.rejectRequest = async function (requestId) {
     try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('friend_requests')
             .update({ status: 'rejected' })
             .eq('id', requestId);
@@ -324,7 +324,7 @@ async function loadFriends() {
 
     try {
         // Fetch friendships
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('friends')
             .select(`
                 user1_id,

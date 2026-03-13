@@ -170,7 +170,7 @@ async function logout() {
 async function createProfile(user) {
     try {
         // Check if profile exists
-        const { data: existingProfile, error: fetchError } = await supabase
+        const { data: existingProfile, error: fetchError } = await supabaseClient
             .from('profiles')
             .select('id')
             .eq('id', user.id)
@@ -180,7 +180,7 @@ async function createProfile(user) {
         if (!existingProfile) {
             const username = user.user_metadata?.username || user.email.split('@')[0];
 
-            const { error: insertError } = await supabase
+            const { error: insertError } = await supabaseClient
                 .from('profiles')
                 .insert([
                     {

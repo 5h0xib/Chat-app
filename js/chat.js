@@ -69,7 +69,7 @@ async function loadMessages() {
     const container = document.getElementById('messagesContainer');
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('messages')
             .select('*')
             .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},receiver_id.eq.${currentUser.id})`)
@@ -122,7 +122,7 @@ async function sendMessage() {
     scrollToBottom();
 
     try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('messages')
             .insert([
                 { sender_id: currentUser.id, receiver_id: activeFriend.id, message: text }
