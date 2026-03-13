@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setupSearch();
         setupMobileBackBtn();
+        setupProfileSettings();
     } catch (err) {
         console.error('Error initializing friends:', err.message);
     }
@@ -48,7 +49,16 @@ async function loadMyProfile() {
 
         currentProfile = data;
         document.getElementById('myName').textContent = data.username;
-        document.getElementById('myAvatar').textContent = data.username.charAt(0).toUpperCase();
+
+        // Show avatar image if exists, else initials
+        const avatarEl = document.getElementById('myAvatar');
+        if (data.avatar_url) {
+            avatarEl.style.backgroundImage = `url('${data.avatar_url}')`;
+            avatarEl.textContent = '';
+        } else {
+            avatarEl.style.backgroundImage = 'none';
+            avatarEl.textContent = data.username.charAt(0).toUpperCase();
+        }
     } catch (err) {
         console.error('Error loading profile:', err.message);
     }
@@ -336,6 +346,20 @@ async function loadFriends() {
 
         if (error) throw error;
 
+        // Fetch unread messages count
+        const { data: unreadMsgData, error: unreadErr } = await supabaseClient
+            .from('messages')
+            .select('sender_id')
+            .eq('receiver_id', currentUser.id)
+            .eq('is_read', false);
+
+        const unreadCounts = {};
+        if (!unreadErr && unreadMsgData) {
+            unreadMsgData.forEach(msg => {
+                unreadCounts[msg.sender_id] = (unreadCounts[msg.sender_id] || 0) + 1;
+            });
+        }
+
         list.innerHTML = '';
         friendList = [];
 
@@ -355,10 +379,19 @@ async function loadFriends() {
             item.className = 'user-item';
             item.dataset.id = friend.id;
 
+            const unreadCount = unreadCounts[friend.id] || 0;
+            const badgeDisplay = unreadCount > 0 ? 'inline-block' : 'none';
+            const badgeHtml = `<span class="unread-badge" id="badge-${friend.id}" style="display: ${badgeDisplay}; background-color: var(--wa-green); color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; float: right;">${unreadCount}</span>`;
+
+            let avatarHtml = `<div class="avatar">${friend.username.charAt(0).toUpperCase()}</div>`;
+            if (friend.avatar_url) {
+                avatarHtml = `<div class="avatar" style="background-image: url('${friend.avatar_url}'); font-size: 0; background-position: center;"></div>`;
+            }
+
             item.innerHTML = `
-                <div class="avatar">${friend.username.charAt(0).toUpperCase()}</div>
+                ${avatarHtml}
                 <div class="user-info">
-                    <span class="user-name">${friend.username}</span>
+                    <span class="user-name">${friend.username} ${badgeHtml}</span>
                     <span class="user-email">Tap to chat</span>
                 </div>
             `;
@@ -404,4 +437,150 @@ function setupMobileBackBtn() {
             }
         });
     }
+}
+
+/**
+ * Handle Profile Settings Modal
+ */
+function setupProfileSettings() {
+    const btn = document.getElementById('profileSettingsBtn');
+    const modal = document.getElementById('profileModal');
+    const closeBtn = document.getElementById('closeProfileBtn');
+    const form = document.getElementById('profileForm');
+    const avatarInput = document.getElementById('avatarInput');
+    const preview = document.getElementById('modalAvatarPreview');
+
+    if (!btn || !modal) return;
+
+    // Open Modal
+    btn.addEventListener('click', () => {
+        document.getElementById('editUsername').value = currentProfile?.username || '';
+
+        // Setup preview
+        if (currentProfile?.avatar_url) {
+            preview.style.backgroundImage = `url('${currentProfile.avatar_url}')`;
+            preview.style.backgroundSize = 'cover';
+            preview.style.backgroundPosition = 'center';
+            preview.textContent = '';
+        } else {
+            preview.style.backgroundImage = 'none';
+            preview.textContent = currentProfile?.username ? currentProfile.username.charAt(0).toUpperCase() : '?';
+        }
+
+        modal.style.display = 'flex';
+    });
+
+    // Close Modal
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+        avatarInput.value = ''; // clear file
+    });
+
+    // Handle Avatar Preview
+    avatarInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.style.backgroundImage = `url('${e.target.result}')`;
+                preview.style.backgroundSize = 'cover';
+                preview.style.backgroundPosition = 'center';
+                preview.textContent = '';
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // Save Changes
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const saveBtn = document.getElementById('saveProfileBtn');
+        const errDiv = document.getElementById('profileError');
+        const sucDiv = document.getElementById('profileSuccess');
+        const newName = document.getElementById('editUsername').value.trim();
+        const file = avatarInput.files[0];
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+        errDiv.style.display = 'none';
+        sucDiv.style.display = 'none';
+
+        try {
+            let avatarUrl = currentProfile?.avatar_url;
+
+            // 1. Upload new image if selected
+            if (file) {
+                // Ensure 1:1 ratio hint (client side check is optional but good, here we just enforce image type)
+                if (!file.type.startsWith('image/')) {
+                    throw new Error('Please select a valid image file');
+                }
+
+                // Max size 5MB
+                if (file.size > 5 * 1024 * 1024) {
+                    throw new Error('Image must be under 5MB');
+                }
+
+                const fileExt = file.name.split('.').pop();
+                // Store in folder UserID/timestamp.ext
+                const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
+
+                const { error: uploadError } = await supabaseClient.storage
+                    .from('avatars')
+                    .upload(fileName, file, { upsert: true });
+
+                if (uploadError) throw uploadError;
+
+                // Get public URL
+                const { data: { publicUrl } } = supabaseClient.storage
+                    .from('avatars')
+                    .getPublicUrl(fileName);
+
+                avatarUrl = publicUrl;
+            }
+
+            // 2. Update Profile Table
+            const { error: updateError } = await supabaseClient
+                .from('profiles')
+                .update({
+                    username: newName,
+                    avatar_url: avatarUrl
+                })
+                .eq('id', currentUser.id);
+
+            if (updateError) {
+                // Check if username conflict
+                if (updateError.message.includes('unique constraint')) {
+                    throw new Error('Username is already taken');
+                }
+                throw updateError;
+            }
+
+            // 3. Update User Auth Metadata (optional but keeps them in sync)
+            await supabaseClient.auth.updateUser({
+                data: { username: newName }
+            });
+
+            // Success
+            sucDiv.textContent = 'Profile updated successfully!';
+            sucDiv.style.display = 'block';
+
+            // Reload UI
+            await loadMyProfile();
+
+            // Close after 1.5s
+            setTimeout(() => {
+                modal.style.display = 'none';
+                sucDiv.style.display = 'none';
+                avatarInput.value = '';
+            }, 1500);
+
+        } catch (err) {
+            errDiv.textContent = err.message;
+            errDiv.style.display = 'block';
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Changes';
+        }
+    });
 }

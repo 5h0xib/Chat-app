@@ -533,6 +533,20 @@ body {
     font-size: 14px;
 }
 
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(1, 4, 9, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .app-bg {
