@@ -3,7 +3,7 @@
 // Check auth state on page load and redirect
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error) throw error;
 
         const path = window.location.pathname.toLowerCase();
@@ -88,7 +88,7 @@ async function signUp() {
     successDiv.style.display = 'none';
 
     try {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabaseClient.auth.signUp({
             email,
             password,
             options: {
@@ -129,7 +129,7 @@ async function login() {
     errorDiv.style.display = 'none';
 
     try {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
             email,
             password
         });
@@ -154,7 +154,7 @@ async function login() {
  */
 async function logout() {
     try {
-        const { error } = await supabase.auth.signOut();
+        const { error } = await supabaseClient.auth.signOut();
         if (error) throw error;
         window.location.href = 'login.html';
     } catch (error) {

@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isChatPage) return;
 
     try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error || !session) return;
 
         currentUser = session.user;

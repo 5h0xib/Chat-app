@@ -55,7 +55,7 @@ window.closeChat = function () {
     document.getElementById('activeChat').style.display = 'none';
 
     if (messagesSubscription) {
-        supabase.removeChannel(messagesSubscription);
+        supabaseClient.removeChannel(messagesSubscription);
         messagesSubscription = null;
     }
 };
@@ -152,10 +152,10 @@ function subscribeToMessages() {
     if (!currentUser) return;
 
     if (messagesSubscription) {
-        supabase.removeChannel(messagesSubscription);
+        supabaseClient.removeChannel(messagesSubscription);
     }
 
-    messagesSubscription = supabase.channel('public:messages')
+    messagesSubscription = supabaseClient.channel('public:messages')
         .on('postgres_changes', {
             event: 'INSERT',
             schema: 'public',
