@@ -33,33 +33,49 @@ ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
 
 -- 6. Setup RLS Policies for Groups
+
+-- Helper function to bypass RLS recursion when checking group membership
+CREATE OR REPLACE FUNCTION get_user_groups()
+RETURNS SETOF uuid
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT group_id FROM group_members WHERE user_id = auth.uid();
+$$;
+
 -- Anyone can see a group they belong to
-CREATE POLICY "Users can see groups they belong to"
+DROP POLICY IF EXISTS "Users can see groups they belong to" ON groups;
+CREATE POLICY "Users can see groups they belong to" 
     ON groups FOR SELECT
     USING (
-        EXISTS (SELECT 1 FROM group_members WHERE group_id = groups.id AND user_id = auth.uid())
+        id IN (SELECT get_user_groups())
     );
 
 -- Any authenticated user can create a group
-CREATE POLICY "Users can create groups"
+DROP POLICY IF EXISTS "Users can create groups" ON groups;
+CREATE POLICY "Users can create groups" 
     ON groups FOR INSERT
     WITH CHECK (auth.uid() = created_by);
 
 -- Only admins can update the group
-CREATE POLICY "Admins can update groups"
+DROP POLICY IF EXISTS "Admins can update groups" ON groups;
+CREATE POLICY "Admins can update groups" 
     ON groups FOR UPDATE
     USING (auth.uid() = created_by);
 
 -- 7. Setup RLS Policies for Group Members
 -- Members can see other members of groups they belong to
-CREATE POLICY "Users can see group members"
+DROP POLICY IF EXISTS "Users can see group members" ON group_members;
+CREATE POLICY "Users can see group members" 
     ON group_members FOR SELECT
     USING (
-        EXISTS (SELECT 1 FROM group_members AS g2 WHERE g2.group_id = group_members.group_id AND g2.user_id = auth.uid())
+        group_id IN (SELECT get_user_groups())
     );
 
 -- Any user can insert themselves (when creating) OR an admin can insert others
-CREATE POLICY "Users can join or admins can add members"
+DROP POLICY IF EXISTS "Users can join or admins can add members" ON group_members;
+CREATE POLICY "Users can join or admins can add members" 
     ON group_members FOR INSERT
     WITH CHECK (
         auth.uid() = user_id OR 
@@ -67,7 +83,8 @@ CREATE POLICY "Users can join or admins can add members"
     );
 
 -- Admins can remove members, or users can leave
-CREATE POLICY "Admins can remove or users can leave"
+DROP POLICY IF EXISTS "Admins can remove or users can leave" ON group_members;
+CREATE POLICY "Admins can remove or users can leave" 
     ON group_members FOR DELETE
     USING (
         auth.uid() = user_id OR 
@@ -78,41 +95,50 @@ CREATE POLICY "Admins can remove or users can leave"
 -- This effectively replaces the older 'SELECT' and 'INSERT' policies.
 -- In Supabase, multiple policies are combined with OR. We just add new policies for groups.
 
-CREATE POLICY "Users can see messages in their groups"
+DROP POLICY IF EXISTS "Users can see messages in their groups" ON messages;
+CREATE POLICY "Users can see messages in their groups" 
     ON messages FOR SELECT
     USING (
         group_id IS NOT NULL AND 
-        EXISTS (SELECT 1 FROM group_members WHERE group_id = messages.group_id AND user_id = auth.uid())
+        group_id IN (SELECT get_user_groups())
     );
 
-CREATE POLICY "Users can insert messages to their groups"
+DROP POLICY IF EXISTS "Users can insert messages to their groups" ON messages;
+CREATE POLICY "Users can insert messages to their groups" 
     ON messages FOR INSERT
     WITH CHECK (
         group_id IS NOT NULL AND auth.uid() = sender_id AND
-        EXISTS (SELECT 1 FROM group_members WHERE group_id = messages.group_id AND user_id = auth.uid())
+        group_id IN (SELECT get_user_groups())
     );
 
 -- Allow senders to SOFT DELETE their own messages
-CREATE POLICY "Users can soft delete their own messages"
+DROP POLICY IF EXISTS "Users can soft delete their own messages" ON messages;
+CREATE POLICY "Users can soft delete their own messages" 
     ON messages FOR UPDATE
     USING (auth.uid() = sender_id);
 
 -- Allow receivers to UPDATE read status
+DROP POLICY IF EXISTS "Users can update receipt status of messages they receive" ON messages;
 CREATE POLICY "Users can update receipt status of messages they receive" 
     ON messages FOR UPDATE 
     USING (auth.uid() = receiver_id);
 
 -- 9. Setup Storage Policies for Group Avatars
+DROP POLICY IF EXISTS "Public Access to Group Avatars" ON storage.objects;
 CREATE POLICY "Public Access to Group Avatars" 
     ON storage.objects FOR SELECT 
     USING (bucket_id = 'group-avatars');
 
+DROP POLICY IF EXISTS "Authenticated users can upload group avatars" ON storage.objects;
 CREATE POLICY "Authenticated users can upload group avatars" 
     ON storage.objects FOR INSERT 
     TO authenticated 
     WITH CHECK (bucket_id = 'group-avatars');
 
+DROP POLICY IF EXISTS "Authenticated users can update group avatars" ON storage.objects;
 CREATE POLICY "Authenticated users can update group avatars" 
     ON storage.objects FOR UPDATE 
     TO authenticated 
     USING (bucket_id = 'group-avatars');
+
+

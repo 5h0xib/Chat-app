@@ -24,10 +24,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         setupSearch();
         setupMobileBackBtn();
         setupProfileSettings();
-    } catch (err) {
-        console.error('Error initializing friends:', err.message);
+        
         // Setup group feature handlers
         setupGroupFeatures();
+    } catch (err) {
+        console.error('Error initializing friends:', err.message);
     }
 });
 
