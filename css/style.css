@@ -471,9 +471,28 @@ body {
 .message-time {
     font-size: 11px;
     color: var(--wa-text-light);
-    float: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
     margin-top: 8px;
     margin-left: 12px;
+}
+
+.message-delete-btn {
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer;
+    padding: 0;
+    line-height: 0;
+    transition: opacity 0.2s, color 0.2s;
+}
+
+.message-delete-btn:hover {
+    opacity: 1;
+    color: #ff7b72;
 }
 
 .chat-footer {

@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat Dashboard</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="css/style.css">
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -45,6 +46,10 @@
                 <button id="profileSettingsBtn" class="action-btn"
                     style="width: 100%; margin-top: 10px; background-color: #21262d; border-color: var(--wa-border); color: var(--wa-text-main);">
                     Edit Profile
+                </button>
+                <button id="newGroupBtn" class="action-btn"
+                    style="width: 100%; margin-top: 10px; background-color: #238636; border-color: rgba(240, 246, 252, 0.1); color: #ffffff;">
+                    New Group
                 </button>
                 <div id="searchResults" class="search-results" style="display: none;"></div>
             </div>
@@ -163,6 +168,73 @@
 
                     <button type="submit" class="btn btn-primary" id="saveProfileBtn">Save Changes</button>
                 </form>
+            </div>
+        </div>
+
+        <!-- Create Group Modal -->
+        <div id="createGroupModal" class="modal-overlay" style="display: none;">
+            <div class="modal-content auth-container">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="color: var(--wa-text-main); margin: 0;">Create New Group</h2>
+                    <button id="closeGroupModal" class="icon-btn">&times;</button>
+                </div>
+                <form id="createGroupForm" class="auth-form">
+                    <div id="groupError" class="error-message" style="display: none;"></div>
+                    <div id="groupSuccess" class="success-message" style="display: none;"></div>
+                    
+                    <div class="form-group">
+                        <label>Group Name</label>
+                        <input type="text" id="groupNameInput" required placeholder="e.g. My Awesome Group">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Select Friends to Add</label>
+                        <div id="groupMembersSelection" style="max-height: 150px; overflow-y: auto; background: #0d1117; border: 1px solid var(--wa-border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                            <!-- Checkboxes populated via JS -->
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="createGroupSubmitBtn">Create Group</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    </div>
+    <!-- Group Settings Modal -->
+    <div id="groupSettingsModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content auth-container">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: var(--wa-text-main); margin: 0;">Group Settings</h2>
+                <button id="closeGroupSettingsModal" class="icon-btn">&times;</button>
+            </div>
+            
+            <div class="form-group" style="text-align: center; border-bottom: 1px solid var(--wa-border); padding-bottom: 20px; margin-bottom: 20px;">
+                <div class="avatar" id="groupSettingsAvatarPreview" style="width: 100px; height: 100px; font-size: 36px; margin: 0 auto 10px;"></div>
+                <label id="groupAvatarInputLabel" for="groupAvatarInput" class="action-btn" style="display: inline-block; cursor: pointer; background-color: #21262d; border-color: var(--wa-border); color: var(--wa-text-main);">
+                    Change Picture
+                </label>
+                <input type="file" id="groupAvatarInput" accept="image/*" style="display: none;">
+                <div id="groupSettingsError" class="error-message" style="display: none; margin-top: 10px;"></div>
+            </div>
+
+            <div class="form-group">
+                <h3 style="margin-bottom: 10px;">Members</h3>
+                <div id="groupSettingsMembersList" style="max-height: 150px; overflow-y: auto; background: #0d1117; border: 1px solid var(--wa-border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Members populated via JS -->
+                </div>
+            </div>
+            
+            <div id="groupSettingsAddMemberContainer" style="display: none; margin-top: 15px; border-top: 1px solid var(--wa-border); padding-top: 15px;">
+                <label style="display: block; margin-bottom: 8px;">Add Member:</label>
+                <div style="display: flex; gap: 8px;">
+                    <select id="groupSettingsAddMemberSelect" style="flex: 1; padding: 8px; border-radius: 6px; background-color: #0d1117; border: 1px solid var(--wa-border); color: var(--wa-text-main);">
+                        <option value="">Select a friend</option>
+                    </select>
+                    <button id="groupSettingsAddMemberBtn" class="action-btn" style="background-color: #238636; color: white;">Add</button>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <button id="leaveGroupBtn" class="action-btn" style="background-color: transparent; border: 1px solid #ff7b72; color: #ff7b72; width: 100%;">Leave Group</button>
             </div>
         </div>
     </div>

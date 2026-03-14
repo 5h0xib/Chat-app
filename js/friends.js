@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         setupProfileSettings();
     } catch (err) {
         console.error('Error initializing friends:', err.message);
+        // Setup group feature handlers
+        setupGroupFeatures();
     }
 });
 
@@ -346,7 +348,17 @@ async function loadFriends() {
 
         if (error) throw error;
 
-        // Fetch unread messages count
+        // Fetch groups
+        const { data: groupsData, error: groupsError } = await supabaseClient
+            .from('group_members')
+            .select(`
+                groups(*)
+            `)
+            .eq('user_id', currentUser.id);
+
+        if (groupsError) throw groupsError;
+
+        // Fetch unread messages count (for groups and friends)
         const { data: unreadMsgData, error: unreadErr } = await supabaseClient
             .from('messages')
             .select('sender_id')
@@ -363,12 +375,55 @@ async function loadFriends() {
         list.innerHTML = '';
         friendList = [];
 
-        if (!data || data.length === 0) {
-            list.innerHTML = '<div class="empty-state-content" style="padding: 20px;"><p>No friends yet. Search for users to add them!</p></div>';
+        const hasFriends = data && data.length > 0;
+        const hasGroups = groupsData && groupsData.length > 0;
+
+        if (!hasFriends && !hasGroups) {
+            list.innerHTML = '<div class="empty-state-content" style="padding: 20px;"><p>No friends or groups yet.</p></div>';
             return;
         }
 
-        data.forEach(friendship => {
+        // Render Groups Priority
+        if (hasGroups) {
+            groupsData.forEach(item => {
+                const group = item.groups;
+                if (!group) return;
+                
+                group.isGroup = true;
+                
+                const unreadCount = unreadCounts[group.id] || 0;
+                const badgeDisplay = unreadCount > 0 ? 'inline-block' : 'none';
+                const badgeHtml = `<span class="unread-badge" id="badge-${group.id}" style="display: ${badgeDisplay}; background-color: var(--wa-green); color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; float: right;">${unreadCount}</span>`;
+
+                let avatarHtml = `<div class="avatar" style="background-color: #238636; color: white;">G</div>`;
+                if (group.avatar_url) {
+                    avatarHtml = `<div class="avatar" style="background-image: url('${group.avatar_url}'); font-size: 0; background-position: center;"></div>`;
+                }
+
+                const li = document.createElement('div');
+                li.className = 'user-item group-item';
+                li.dataset.id = group.id;
+                li.innerHTML = `
+                    ${avatarHtml}
+                    <div class="user-info">
+                        <span class="user-name">${group.name} ${badgeHtml}</span>
+                        <span class="user-email">Group Chat</span>
+                    </div>
+                `;
+                li.addEventListener('click', () => {
+                    document.querySelectorAll('.friends-list .user-item').forEach(el => el.classList.remove('active'));
+                    li.classList.add('active');
+                    if (window.innerWidth <= 768) {
+                        document.getElementById('chatArea').classList.add('active');
+                    }
+                    if (typeof openChat === 'function') openChat(group);
+                });
+                list.appendChild(li);
+            });
+        }
+
+        if (hasFriends) {
+            data.forEach(friendship => {
             // Determine which user is the friend (not current user)
             const friend = friendship.user1_id === currentUser.id ? friendship.user2 : friendship.user1;
             if (!friend) return;
@@ -414,11 +469,120 @@ async function loadFriends() {
 
             list.appendChild(item);
         });
+        }
 
     } catch (err) {
         console.error('Error loading friends:', err.message);
         list.innerHTML = '<div class="loading-text" style="color:red">Error loading friends</div>';
     }
+}
+
+/**
+ * Setup Group Creation Modals and Submit Logic
+ */
+function setupGroupFeatures() {
+    const newGroupBtn = document.getElementById('newGroupBtn');
+    const createModal = document.getElementById('createGroupModal');
+    const closeModal = document.getElementById('closeGroupModal');
+    const createForm = document.getElementById('createGroupForm');
+    const membersSel = document.getElementById('groupMembersSelection');
+    
+    if (!newGroupBtn || !createModal) return;
+
+    newGroupBtn.addEventListener('click', () => {
+        membersSel.innerHTML = '';
+        if (friendList.length === 0) {
+            membersSel.innerHTML = '<div style="color: var(--wa-text-light); text-align: center;">You have no friends yet.</div>';
+        } else {
+            friendList.forEach(f => {
+                const div = document.createElement('div');
+                div.style.display = 'flex';
+                div.style.alignItems = 'center';
+                div.style.gap = '8px';
+                
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = f.id;
+                cb.id = `group-cb-${f.id}`;
+                
+                const label = document.createElement('label');
+                label.htmlFor = cb.id;
+                label.textContent = f.username;
+                label.style.cursor = 'pointer';
+                
+                div.appendChild(cb);
+                div.appendChild(label);
+                membersSel.appendChild(div);
+            });
+        }
+        createModal.style.display = 'flex';
+    });
+
+    closeModal.addEventListener('click', () => {
+        createModal.style.display = 'none';
+        document.getElementById('groupError').style.display = 'none';
+        document.getElementById('groupSuccess').style.display = 'none';
+        createForm.reset();
+    });
+
+    createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('groupNameInput').value.trim();
+        const checkedBoxes = Array.from(membersSel.querySelectorAll('input[type="checkbox"]:checked'));
+        const memberIds = checkedBoxes.map(cb => cb.value);
+        
+        const errDiv = document.getElementById('groupError');
+        const sucDiv = document.getElementById('groupSuccess');
+        const btn = document.getElementById('createGroupSubmitBtn');
+        
+        errDiv.style.display = 'none';
+        sucDiv.style.display = 'none';
+        
+        if (!name) return;
+        
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+        
+        try {
+            const { data: group, error: groupErr } = await supabaseClient
+                .from('groups')
+                .insert([{ name: name, created_by: currentUser.id }])
+                .select()
+                .single();
+                
+            if (groupErr) throw groupErr;
+            
+            const membersToInsert = [{ group_id: group.id, user_id: currentUser.id }];
+            memberIds.forEach(id => {
+                membersToInsert.push({ group_id: group.id, user_id: id });
+            });
+            
+            const { error: memErr } = await supabaseClient
+                .from('group_members')
+                .insert(membersToInsert);
+                
+            if (memErr) throw memErr;
+            
+            sucDiv.textContent = 'Group created successfully!';
+            sucDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                createModal.style.display = 'none';
+                createForm.reset();
+                btn.disabled = false;
+                btn.textContent = 'Create Group';
+                loadFriends();
+            }, 1000);
+            
+        } catch (err) {
+            console.error(err);
+            errDiv.textContent = err.message || 'Error creating group';
+            errDiv.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Create Group';
+        }
+    });
 }
 
 /**
