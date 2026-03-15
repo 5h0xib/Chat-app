@@ -95,7 +95,7 @@ async function loadMessages() {
     const container = document.getElementById('messagesContainer');
 
     try {
-        let query = supabaseClient.from('messages').select('*');
+        let query = supabaseClient.from('messages').select('*, profiles(username)');
         if (activeFriend.isGroup) {
             query = query.eq('group_id', activeFriend.id);
         } else {
@@ -234,8 +234,14 @@ function subscribeToMessages() {
     if (messagesSubscription) return;
 
     messagesSubscription = supabaseClient.channel('public:messages')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async payload => {
             const newMsg = payload.new;
+
+            // For groups, we might need the sender's username if it's not already there
+            if (newMsg.group_id && !newMsg.profiles) {
+                const { data: prof } = await supabaseClient.from('profiles').select('username').eq('id', newMsg.sender_id).single();
+                if (prof) newMsg.profiles = prof;
+            }
 
             // Is it relevant to us? (Or is it a group message?)
             if (newMsg.receiver_id === currentUser.id || newMsg.sender_id === currentUser.id || newMsg.group_id) {
@@ -273,13 +279,16 @@ function subscribeToMessages() {
                         scrollToBottom();
 
                         // We tell the server it's read immediately
-                        supabaseClient.from('messages').update({ is_read: true }).eq('id', newMsg.id).then();
+                        if (!newMsg.group_id) {
+                            supabaseClient.from('messages').update({ is_read: true }).eq('id', newMsg.id).then();
+                        }
                     }
                 } else {
                     // Message is NOT for the active chat.
                     // If we received it, increment the badge
-                    if (newMsg.receiver_id === currentUser.id) {
-                        const badgeInfo = document.getElementById(`badge-${newMsg.sender_id}`);
+                    if (newMsg.sender_id !== currentUser.id) {
+                        let badgeId = newMsg.group_id ? `badge-${newMsg.group_id}` : `badge-${newMsg.sender_id}`;
+                        const badgeInfo = document.getElementById(badgeId);
                         if (badgeInfo) {
                             const count = parseInt(badgeInfo.textContent || '0') + 1;
                             badgeInfo.textContent = count;
@@ -289,16 +298,20 @@ function subscribeToMessages() {
                 }
 
                 // Notifications for any incoming message
-                if (newMsg.receiver_id === currentUser.id && newMsg.sender_id !== currentUser.id) {
+                if (newMsg.sender_id !== currentUser.id && (newMsg.receiver_id === currentUser.id || newMsg.group_id)) {
                     if (typeof showNotification === 'function') {
                         let senderName = 'Someone';
                         if (newMsg.group_id) {
-                            senderName = 'Group Chat'; // Fallback for groups
+                            senderName = (newMsg.profiles && newMsg.profiles.username) ? newMsg.profiles.username : 'Group Member';
                         } else {
-                            const sender = friendList.find(f => f.id === newMsg.sender_id);
-                            if (sender) senderName = sender.username;
+                            const sender = (typeof friendList !== 'undefined' && friendList.find(f => f.id === newMsg.sender_id)) || { username: 'Someone' };
+                            senderName = sender.username;
                         }
-                        if (document.visibilityState !== 'visible' || (!activeFriend || activeFriend.id !== newMsg.sender_id)) {
+                        
+                        const isVisible = document.visibilityState === 'visible';
+                        const isCurrent = isForCurrentChat;
+                        
+                        if (!isVisible || !isCurrent) {
                             showNotification(senderName, newMsg.message || 'Image attached');
                         }
                     }
@@ -307,21 +320,21 @@ function subscribeToMessages() {
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, payload => {
             const updatedMsg = payload.new;
-            // Update the tick color if it's currently rendered
             const msgEl = document.querySelector(`[data-id="${updatedMsg.id}"]`);
             if (msgEl) {
                 if (updatedMsg.is_read) {
                     const tickSvg = msgEl.querySelector('.read-receipt');
-                    if (tickSvg) {
-                        tickSvg.setAttribute('stroke', '#ffffff');
-                    }
+                    if (tickSvg) tickSvg.setAttribute('stroke', '#ffffff');
                 }
                 if (updatedMsg.deleted_at) {
                     const textNode = msgEl.querySelector('.message-content-text');
                     const imgNode = msgEl.querySelector('img');
                     const deleteBtn = msgEl.querySelector('.message-delete-btn');
                     
-                    if (textNode) textNode.innerHTML = '<i>This message was deleted</i>';
+                    if (textNode) {
+                        textNode.innerHTML = '<i>This message was deleted</i>';
+                        textNode.style.color = 'var(--wa-text-light)';
+                    }
                     if (imgNode) imgNode.remove();
                     if (deleteBtn) deleteBtn.remove();
                 }
@@ -430,7 +443,18 @@ function appendMessage(msg) {
     const contentDiv = document.createElement('div');
     contentDiv.style.display = 'flex';
     contentDiv.style.flexDirection = 'column';
-    contentDiv.style.gap = '8px';
+    contentDiv.style.gap = '4px';
+
+    // Show sender name in group chat
+    if (activeFriend && activeFriend.isGroup && !isOut) {
+        const senderNode = document.createElement('span');
+        senderNode.style.fontSize = '12px';
+        senderNode.style.fontWeight = '600';
+        senderNode.style.color = 'var(--wa-green)';
+        senderNode.style.marginBottom = '2px';
+        senderNode.textContent = (msg.profiles && msg.profiles.username) ? msg.profiles.username : 'Group Member';
+        contentDiv.appendChild(senderNode);
+    }
 
     if (msg.image_url) {
         const img = document.createElement('img');
@@ -483,7 +507,7 @@ function appendMessage(msg) {
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
-    container.scrollTop = container.scrollHeight;
+    if (container) container.scrollTop = container.scrollHeight;
 }
 
 /**
@@ -502,12 +526,12 @@ window.setupGroupSettings = async function(group) {
     const leaveBtn = document.getElementById('leaveGroupBtn');
     
     // reset UI
-    errDiv.style.display = 'none';
-    listEl.innerHTML = '<div style="text-align:center;color:var(--wa-text-light);">Loading...</div>';
+    if (errDiv) errDiv.style.display = 'none';
+    if (listEl) listEl.innerHTML = '<div style="text-align:center;color:var(--wa-text-light);">Loading...</div>';
     
     // Set avatar
     if (group.avatar_url) {
-        avatarPreview.style.backgroundImage = "url(' + group.avatar_url + ')";
+        avatarPreview.style.backgroundImage = `url('${group.avatar_url}')`;
         avatarPreview.style.backgroundSize = 'cover';
         avatarPreview.style.backgroundPosition = 'center';
         avatarPreview.textContent = '';
@@ -647,8 +671,9 @@ window.setupGroupSettings = async function(group) {
             
             // update UI globally
             group.avatar_url = avatarUrl;
-            document.getElementById('currentChatAvatar').style.backgroundImage = "url(' + avatarUrl + ')";
-            avatarPreview.style.backgroundImage = "url(' + avatarUrl + ')";
+            document.getElementById('currentChatAvatar').style.backgroundImage = `url('${avatarUrl}')`;
+            avatarPreview.style.backgroundImage = `url('${avatarUrl}')`;
+            avatarPreview.textContent = '';
             
             if (typeof loadFriends === 'function') loadFriends();
         } catch (err) {
