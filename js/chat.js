@@ -4,6 +4,18 @@ let activeFriend = null;
 let messagesSubscription = null;
 let currentImageAttachment = null;
 
+// Colour palette for sender name highlighting in group chat
+const SENDER_COLORS = [
+    '#58a6ff', '#79c0ff', '#56d364', '#3fb950',
+    '#d2a8ff', '#bc8cff', '#ffa657', '#f0883e',
+    '#ff7b72', '#f85149', '#39d353', '#26a641',
+];
+function getSenderColor(username) {
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+    return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+}
+
 // Initialize chat system
 document.addEventListener('DOMContentLoaded', () => {
     const isChatPage = window.location.pathname.toLowerCase().endsWith('chat.html');
@@ -22,13 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Setup image attachment handlers
         setupImageAttachment();
-
-        // Subscribe to globally incoming messages
-        subscribeToMessages();
     }
 
-    // Request notification permission if not asked
-    // This was moved to openChat for user gesture
+    // subscribeToMessages() is called from friends.js after currentUser is confirmed ready
 });
 
 /**
@@ -95,11 +103,14 @@ async function loadMessages() {
     const container = document.getElementById('messagesContainer');
 
     try {
-        let query = supabaseClient.from('messages').select('*, profiles(username)');
+        let query = supabaseClient.from('messages').select('*');
         if (activeFriend.isGroup) {
             query = query.eq('group_id', activeFriend.id);
         } else {
-            query = query.or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},receiver_id.eq.${currentUser.id})`);
+            query = query.or(
+                `and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeFriend.id}),` +
+                `and(sender_id.eq.${activeFriend.id},receiver_id.eq.${currentUser.id})`
+            );
         }
         const { data, error } = await query.order('created_at', { ascending: true });
 
@@ -110,6 +121,18 @@ async function loadMessages() {
         if (!data || data.length === 0) {
             container.innerHTML = '<div class="loading-text">Start of conversation</div>';
             return;
+        }
+
+        // For group chats, fetch all unique sender profiles in one shot
+        if (activeFriend.isGroup) {
+            const senderIds = [...new Set(data.map(m => m.sender_id))];
+            const { data: profiles } = await supabaseClient
+                .from('profiles')
+                .select('id, username')
+                .in('id', senderIds);
+            const profileMap = {};
+            if (profiles) profiles.forEach(p => { profileMap[p.id] = p; });
+            data.forEach(msg => { msg.profiles = profileMap[msg.sender_id] || null; });
         }
 
         data.forEach(msg => {
@@ -230,90 +253,98 @@ async function sendMessage(text) {
  * Subscribe to realtime messages globally
  */
 function subscribeToMessages() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        // currentUser not ready yet — retry shortly
+        setTimeout(subscribeToMessages, 200);
+        return;
+    }
     if (messagesSubscription) return;
 
-    messagesSubscription = supabaseClient.channel('public:messages')
+    messagesSubscription = supabaseClient
+        .channel('realtime:messages:' + currentUser.id)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async payload => {
             const newMsg = payload.new;
 
-            // For groups, we might need the sender's username if it's not already there
-            if (newMsg.group_id && !newMsg.profiles) {
-                const { data: prof } = await supabaseClient.from('profiles').select('username').eq('id', newMsg.sender_id).single();
+            // Always fetch sender profile so we have a name (works for both DMs and groups)
+            if (!newMsg.profiles) {
+                const { data: prof } = await supabaseClient
+                    .from('profiles')
+                    .select('id, username')
+                    .eq('id', newMsg.sender_id)
+                    .single();
                 if (prof) newMsg.profiles = prof;
             }
 
-            // Is it relevant to us? (Or is it a group message?)
-            if (newMsg.receiver_id === currentUser.id || newMsg.sender_id === currentUser.id || newMsg.group_id) {
+            // Is it relevant to us?
+            const isForUs = newMsg.receiver_id === currentUser.id ||
+                            newMsg.sender_id === currentUser.id ||
+                            isUserInGroup(newMsg.group_id);
 
-                // If it's part of the currently open chat
-                const isForCurrentChat = activeFriend && (
-                    (!activeFriend.isGroup && (
-                        (newMsg.sender_id === currentUser.id && newMsg.receiver_id === activeFriend.id) ||
-                        (newMsg.sender_id === activeFriend.id && newMsg.receiver_id === currentUser.id)
-                    )) ||
-                    (activeFriend.isGroup && newMsg.group_id === activeFriend.id)
-                );
+            if (!isForUs) return;
 
-                if (isForCurrentChat) {
-                    if (newMsg.sender_id === currentUser.id) {
-                        // Our own message just arrived (realtime confirm)
-                        const tempMsgs = document.querySelectorAll('[data-id^="temp-"]');
-                        let found = false;
-                        for (const tm of tempMsgs) {
-                            if (tm.textContent.includes(newMsg.message || '')) {
-                                tm.dataset.id = newMsg.id;
-                                const tickSvg = tm.querySelector('.read-receipt');
-                                if (tickSvg) tickSvg.setAttribute('stroke', newMsg.is_read ? '#ffffff' : '#8b949e');
-                                found = true;
-                                break;
-                            }
+            // Is it part of the currently open chat?
+            const isForCurrentChat = activeFriend && (
+                (!activeFriend.isGroup && (
+                    (newMsg.sender_id === currentUser.id && newMsg.receiver_id === activeFriend.id) ||
+                    (newMsg.sender_id === activeFriend.id && newMsg.receiver_id === currentUser.id)
+                )) ||
+                (activeFriend.isGroup && newMsg.group_id === activeFriend.id)
+            );
+
+            if (isForCurrentChat) {
+                if (newMsg.sender_id === currentUser.id) {
+                    // Our own message confirmed — replace optimistic temp bubble
+                    const tempMsgs = document.querySelectorAll('[data-id^="temp-"]');
+                    let found = false;
+                    for (const tm of tempMsgs) {
+                        if (tm.textContent.includes(newMsg.message || '')) {
+                            tm.dataset.id = newMsg.id;
+                            const tickSvg = tm.querySelector('.read-receipt');
+                            if (tickSvg) tickSvg.setAttribute('stroke', newMsg.is_read ? '#ffffff' : '#8b949e');
+                            found = true;
+                            break;
                         }
-                        if (!found) {
-                            appendMessage(newMsg);
-                            scrollToBottom();
-                        }
-                    } else {
-                        // Other person sent a message in the active chat
+                    }
+                    if (!found) {
                         appendMessage(newMsg);
                         scrollToBottom();
-
-                        // We tell the server it's read immediately
-                        if (!newMsg.group_id) {
-                            supabaseClient.from('messages').update({ is_read: true }).eq('id', newMsg.id).then();
-                        }
                     }
                 } else {
-                    // Message is NOT for the active chat.
-                    // If we received it, increment the badge
-                    if (newMsg.sender_id !== currentUser.id) {
-                        let badgeId = newMsg.group_id ? `badge-${newMsg.group_id}` : `badge-${newMsg.sender_id}`;
-                        const badgeInfo = document.getElementById(badgeId);
-                        if (badgeInfo) {
-                            const count = parseInt(badgeInfo.textContent || '0') + 1;
-                            badgeInfo.textContent = count;
-                            badgeInfo.style.display = 'inline-block';
-                        }
+                    // Incoming message in the active chat
+                    appendMessage(newMsg);
+                    scrollToBottom();
+
+                    if (!newMsg.group_id) {
+                        supabaseClient.from('messages').update({ is_read: true }).eq('id', newMsg.id).then();
                     }
                 }
+            } else {
+                // Not the active chat — bump badge
+                if (newMsg.sender_id !== currentUser.id) {
+                    const badgeId = newMsg.group_id ? `badge-${newMsg.group_id}` : `badge-${newMsg.sender_id}`;
+                    const badgeInfo = document.getElementById(badgeId);
+                    if (badgeInfo) {
+                        const count = parseInt(badgeInfo.textContent || '0') + 1;
+                        badgeInfo.textContent = count;
+                        badgeInfo.style.display = 'inline-block';
+                    }
+                }
+            }
 
-                // Notifications for any incoming message
-                if (newMsg.sender_id !== currentUser.id && (newMsg.receiver_id === currentUser.id || newMsg.group_id)) {
-                    if (typeof showNotification === 'function') {
-                        let senderName = 'Someone';
-                        if (newMsg.group_id) {
-                            senderName = (newMsg.profiles && newMsg.profiles.username) ? newMsg.profiles.username : 'Group Member';
-                        } else {
-                            const sender = (typeof friendList !== 'undefined' && friendList.find(f => f.id === newMsg.sender_id)) || { username: 'Someone' };
-                            senderName = sender.username;
-                        }
-                        
-                        const isVisible = document.visibilityState === 'visible';
-                        const isCurrent = isForCurrentChat;
-                        
-                        if (!isVisible || !isCurrent) {
-                            showNotification(senderName, newMsg.message || 'Image attached');
-                        }
+            // Push notifications
+            if (newMsg.sender_id !== currentUser.id &&
+                (newMsg.receiver_id === currentUser.id || newMsg.group_id)) {
+                if (typeof showNotification === 'function') {
+                    let senderName = 'Someone';
+                    if (newMsg.profiles && newMsg.profiles.username) {
+                        senderName = newMsg.profiles.username;
+                    } else if (!newMsg.group_id) {
+                        const f = (typeof friendList !== 'undefined') &&
+                            friendList.find(f => f.id === newMsg.sender_id);
+                        if (f) senderName = f.username;
+                    }
+                    if (!isForCurrentChat || document.visibilityState !== 'visible') {
+                        showNotification(senderName, newMsg.message || 'Image attached');
                     }
                 }
             }
@@ -330,7 +361,6 @@ function subscribeToMessages() {
                     const textNode = msgEl.querySelector('.message-content-text');
                     const imgNode = msgEl.querySelector('img');
                     const deleteBtn = msgEl.querySelector('.message-delete-btn');
-                    
                     if (textNode) {
                         textNode.innerHTML = '<i>This message was deleted</i>';
                         textNode.style.color = 'var(--wa-text-light)';
@@ -340,7 +370,24 @@ function subscribeToMessages() {
                 }
             }
         })
-        .subscribe();
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log('[Chat] Realtime subscription active');
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                console.warn('[Chat] Realtime subscription issue:', status, '— will retry');
+                messagesSubscription = null;
+                setTimeout(subscribeToMessages, 3000);
+            }
+        });
+}
+
+/** Helper: check if the current user is a member of a given group (based on loaded friendList/groups) */
+function isUserInGroup(groupId) {
+    if (!groupId) return false;
+    if (typeof friendList === 'undefined') return false;
+    // friendList contains group objects too (with isGroup flag)
+    // We check sidebar items as a fallback
+    return !!document.getElementById(`badge-${groupId}`);
 }
 
 /**
@@ -445,14 +492,16 @@ function appendMessage(msg) {
     contentDiv.style.flexDirection = 'column';
     contentDiv.style.gap = '4px';
 
-    // Show sender name in group chat
+    // Show sender name in group chat (with per-user colour)
     if (activeFriend && activeFriend.isGroup && !isOut) {
+        const senderName = (msg.profiles && msg.profiles.username) ? msg.profiles.username : 'Group Member';
         const senderNode = document.createElement('span');
         senderNode.style.fontSize = '12px';
-        senderNode.style.fontWeight = '600';
-        senderNode.style.color = 'var(--wa-green)';
+        senderNode.style.fontWeight = '700';
+        senderNode.style.color = getSenderColor(senderName);
         senderNode.style.marginBottom = '2px';
-        senderNode.textContent = (msg.profiles && msg.profiles.username) ? msg.profiles.username : 'Group Member';
+        senderNode.style.letterSpacing = '0.3px';
+        senderNode.textContent = senderName;
         contentDiv.appendChild(senderNode);
     }
 

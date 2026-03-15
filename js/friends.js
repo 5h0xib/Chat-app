@@ -27,6 +27,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Setup group feature handlers
         setupGroupFeatures();
+
+        // Start realtime subscription NOW that currentUser is confirmed
+        if (typeof subscribeToMessages === 'function') {
+            subscribeToMessages();
+        }
     } catch (err) {
         console.error('Error initializing friends:', err.message);
     }
