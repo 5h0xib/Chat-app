@@ -46,7 +46,8 @@ window.openChat = async function (friend) {
     document.getElementById('emptyChat').style.display = 'none';
     document.getElementById('activeChat').style.display = 'flex';
 
-    document.getElementById('currentChatName').textContent = friend.username;
+    const chatTitle = friend.isGroup ? friend.name : friend.username;
+    document.getElementById('currentChatName').textContent = chatTitle;
     
     // Show actual avatar in header
     const avatarEl = document.getElementById('currentChatAvatar');
@@ -57,7 +58,7 @@ window.openChat = async function (friend) {
         avatarEl.textContent = '';
     } else {
         avatarEl.style.backgroundImage = 'none';
-        avatarEl.textContent = friend.username.charAt(0).toUpperCase();
+        avatarEl.textContent = friend.isGroup ? 'G' : chatTitle.charAt(0).toUpperCase();
     }
 
     // Clear current messages
