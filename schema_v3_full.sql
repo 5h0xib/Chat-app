@@ -44,12 +44,12 @@ AS $$
   SELECT group_id FROM group_members WHERE user_id = auth.uid();
 $$;
 
--- Anyone can see a group they belong to
+-- Anyone can see a group they belong to or created
 DROP POLICY IF EXISTS "Users can see groups they belong to" ON groups;
 CREATE POLICY "Users can see groups they belong to" 
     ON groups FOR SELECT
     USING (
-        id IN (SELECT get_user_groups())
+        created_by = auth.uid() OR id IN (SELECT get_user_groups())
     );
 
 -- Any authenticated user can create a group

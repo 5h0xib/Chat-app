@@ -98,7 +98,7 @@ async function loadMessages() {
         if (activeFriend.isGroup) {
             query = query.eq('group_id', activeFriend.id);
         } else {
-            query = query.or(`and(sender_id.eq.${currentUser.id}, receiver_id.eq.${activeFriend.id}), and(sender_id.eq.${activeFriend.id}, receiver_id.eq.${currentUser.id})`);
+            query = query.or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},receiver_id.eq.${currentUser.id})`);
         }
         const { data, error } = await query.order('created_at', { ascending: true });
 
@@ -549,23 +549,23 @@ window.setupGroupSettings = async function(group) {
                 div.style.justifyContent = 'space-between';
                 div.style.alignItems = 'center';
                 
-                let avatarHtml = <div class="avatar" style="width: 32px; height: 32px; font-size: 14px;"> + p.username.charAt(0).toUpperCase() + </div>;
+                let avatarHtml = `<div class="avatar" style="width: 32px; height: 32px; font-size: 14px;">` + p.username.charAt(0).toUpperCase() + `</div>`;
                 if (p.avatar_url) {
-                    avatarHtml = <div class="avatar" style="width: 32px; height: 32px; font-size: 0; background-image: url(' + p.avatar_url + '); background-size: cover; background-position: center;"></div>;
+                    avatarHtml = `<div class="avatar" style="width: 32px; height: 32px; font-size: 0; background-image: url('` + p.avatar_url + `'); background-size: cover; background-position: center;"></div>`;
                 }
                 
                 let rmBtn = '';
                 if (isAdmin && p.id !== currentUser.id) {
-                    rmBtn = <button class="action-btn" style="padding: 4px 8px; font-size: 11px; background: transparent; border: 1px solid #ff7b72; color: #ff7b72;" onclick="removeMember(' + group.id + ', ' + p.id + ')">Remove</button>;
+                    rmBtn = `<button class="action-btn" style="padding: 4px 8px; font-size: 11px; background: transparent; border: 1px solid #ff7b72; color: #ff7b72;" onclick="removeMember('` + group.id + `', '` + p.id + `')">Remove</button>`;
                 }
                 
-                div.innerHTML = 
+                div.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px;">
-                         + avatarHtml + 
-                        <span style="color: var(--wa-text-main);"> + p.username + (p.id === group.created_by ? ' <span style="font-size: 10px; color: var(--wa-green);">(Admin)</span>' : '') + </span>
+                        ` + avatarHtml + `
+                        <span style="color: var(--wa-text-main);">` + p.username + (p.id === group.created_by ? ' <span style="font-size: 10px; color: var(--wa-green);">(Admin)</span>' : '') + `</span>
                     </div>
-                     + rmBtn + 
-                ;
+                    ` + rmBtn + `
+                `;
                 listEl.appendChild(div);
             });
             
