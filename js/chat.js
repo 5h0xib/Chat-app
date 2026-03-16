@@ -319,8 +319,8 @@ function subscribeToMessages() {
                     }
                 }
             } else {
-                // Not the active chat — bump badge
-                if (newMsg.sender_id !== currentUser.id) {
+                // Not the active chat — bump badge (skip for system event messages)
+                if (newMsg.sender_id !== currentUser.id && newMsg.message_type !== 'event') {
                     const badgeId = newMsg.group_id ? `badge-${newMsg.group_id}` : `badge-${newMsg.sender_id}`;
                     const badgeInfo = document.getElementById(badgeId);
                     if (badgeInfo) {
@@ -331,8 +331,9 @@ function subscribeToMessages() {
                 }
             }
 
-            // Push notifications
-            if (newMsg.sender_id !== currentUser.id &&
+            // Push notifications (skip for system event messages)
+            if (newMsg.message_type !== 'event' &&
+                newMsg.sender_id !== currentUser.id &&
                 (newMsg.receiver_id === currentUser.id || newMsg.group_id)) {
                 if (typeof showNotification === 'function') {
                     let senderName = 'Someone';
@@ -478,6 +479,16 @@ function appendMessage(msg) {
     }
 
     if (msg.id && !msg.id.startsWith('temp-') && document.querySelector(`[data-id="${msg.id}"]`)) {
+        return;
+    }
+
+    // --- WhatsApp-style EVENT (system) message ---
+    if (msg.message_type === 'event') {
+        const pill = document.createElement('div');
+        pill.className = 'message-event';
+        if (msg.id) pill.dataset.id = msg.id;
+        pill.textContent = msg.message || '';
+        container.appendChild(pill);
         return;
     }
 
@@ -671,6 +682,22 @@ window.setupGroupSettings = async function(group) {
         try {
             const { error } = await supabaseClient.from('group_members').insert([{ group_id: group.id, user_id: uid }]);
             if (error) throw error;
+
+            // Fetch the added user's name for the event message
+            const { data: addedProfile } = await supabaseClient
+                .from('profiles').select('username').eq('id', uid).single();
+            const addedName = addedProfile ? addedProfile.username : 'A member';
+            const adderName = currentProfile ? currentProfile.username : 'Admin';
+
+            // Insert WhatsApp-style event message
+            await supabaseClient.from('messages').insert([{
+                group_id: group.id,
+                sender_id: currentUser.id,
+                message: `${adderName} added ${addedName}`,
+                message_type: 'event',
+                is_read: false
+            }]);
+
             await loadGroupMembers();
         } catch (err) {
             console.error(err);
@@ -684,6 +711,16 @@ window.setupGroupSettings = async function(group) {
     leaveBtn.onclick = async () => {
         if (!confirm('Are you sure you want to leave this group?')) return;
         try {
+            // Insert event message BEFORE deleting membership (so RLS still passes)
+            const leaverName = currentProfile ? currentProfile.username : 'A member';
+            await supabaseClient.from('messages').insert([{
+                group_id: group.id,
+                sender_id: currentUser.id,
+                message: `${leaverName} left the group`,
+                message_type: 'event',
+                is_read: false
+            }]);
+
             const { error } = await supabaseClient.from('group_members').delete().eq('group_id', group.id).eq('user_id', currentUser.id);
             if (error) throw error;
             closeListener();
@@ -736,10 +773,32 @@ window.setupGroupSettings = async function(group) {
 window.removeMember = async function(groupId, userId) {
     if (!confirm('Remove member from group?')) return;
     try {
+        // Fetch the removed user's name for the event message
+        const { data: removedProfile } = await supabaseClient
+            .from('profiles').select('username').eq('id', userId).single();
+        const removedName = removedProfile ? removedProfile.username : 'A member';
+        const removerName = currentProfile ? currentProfile.username : 'Admin';
+
         const { error } = await supabaseClient.from('group_members').delete().eq('group_id', groupId).eq('user_id', userId);
         if (error) throw error;
-        // re-open settings or trigger reload via some event
-        alert('Member removed. Please reopen settings to refresh list.');
+
+        // Insert WhatsApp-style event message
+        await supabaseClient.from('messages').insert([{
+            group_id: groupId,
+            sender_id: currentUser.id,
+            message: `${removerName} removed ${removedName}`,
+            message_type: 'event',
+            is_read: false
+        }]);
+
+        // Reload the settings member list
+        const listEl = document.getElementById('groupSettingsMembersList');
+        if (listEl) {
+            // Trigger a full settings reload by simulating a click on the header
+            const reloadEvent = new CustomEvent('group-member-changed', { detail: { groupId } });
+            document.dispatchEvent(reloadEvent);
+        }
+        alert('Member removed.');
     } catch (err) {
         console.error(err);
         alert('Failed to remove member.');
